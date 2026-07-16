@@ -13,14 +13,26 @@ async function seed() {
     await client.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
 
     console.log("Cleaning up existing data...");
-    await client.query(`DELETE FROM auth.users WHERE email LIKE '%@sift.dev' OR email LIKE '%@acmecorp.com' OR email LIKE '%@example.com' OR email LIKE '%@test.com' OR email LIKE '%faker%';`);
-    await client.query(`DELETE FROM public.corporates;`); // Cascades down
+    await client.query(`DELETE FROM public.corporates;`);
     await client.query(`DELETE FROM public.users;`);
+    await client.query(`DELETE FROM auth.users WHERE email LIKE '%@sift.dev' OR email LIKE '%@acmecorp.com' OR email LIKE '%@example.com' OR email LIKE '%@test.com' OR email LIKE '%faker%';`);
 
-    const adminId = crypto.randomUUID();
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      'https://pjqvsupsshffrsiyemvs.supabase.co',
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
+    const { data: adminData } = await supabase.auth.admin.createUser({
+      email: 'admin@sift.dev',
+      password: 'password123',
+      email_confirm: true,
+      user_metadata: { role: 'admin', full_name: 'System Admin' }
+    });
+    const adminId = adminData.user.id;
     await client.query(`
-      INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-      VALUES ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@sift.dev', crypt('password123', gen_salt('bf')), now(), '{"provider": "email", "providers": ["email"]}', '{"role": "admin", "full_name": "System Admin"}', now(), now());
+      INSERT INTO public.users (id, email, role)
+      VALUES ($1, 'admin@sift.dev', 'admin')
     `, [adminId]);
     console.log("✅ Admin created");
 
@@ -36,12 +48,27 @@ async function seed() {
       
       corporates.push(corpId);
 
-      const email = i === 0 ? 'recruiter@acmecorp.com' : `recruiter_${i}@faker.com`;
-      const recId = crypto.randomUUID();
-      await client.query(`
-        INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-        VALUES ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, crypt('password123', gen_salt('bf')), now(), '{"provider": "email", "providers": ["email"]}', $3, now(), now());
-      `, [recId, email, JSON.stringify({ role: 'corporate', full_name: faker.person.fullName() })]);
+      let recId;
+      if (i === 0) {
+        const { data: recData } = await supabase.auth.admin.createUser({
+          email: 'recruiter@acmecorp.com',
+          password: 'password123',
+          email_confirm: true,
+          user_metadata: { role: 'corporate', full_name: faker.person.fullName() }
+        });
+        recId = recData.user.id;
+        await client.query(`
+          INSERT INTO public.users (id, email, role) VALUES ($1, 'recruiter@acmecorp.com', 'corporate')
+        `, [recId]);
+      } else {
+        const email = `recruiter_${i}@faker.com`;
+        recId = crypto.randomUUID();
+        await client.query(`
+          INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+          VALUES ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, crypt('password123', gen_salt('bf')), now(), '{"provider": "email", "providers": ["email"]}', $3, now(), now());
+        `, [recId, email, JSON.stringify({ role: 'corporate', full_name: faker.person.fullName() })]);
+        await client.query(`INSERT INTO public.users (id, email, role) VALUES ($1, $2, 'corporate')`, [recId, email]);
+      }
 
       await client.query(`
         INSERT INTO public.corporate_members (corporate_id, user_id, seat_role)
@@ -68,14 +95,27 @@ async function seed() {
 
     const students = [];
     for (let i = 0; i < 40; i++) {
-      const email = i === 0 ? 'student@example.com' : `student_${i}@faker.com`;
-      const stuId = crypto.randomUUID();
-      await client.query(`
-        INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
-        VALUES ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, crypt('password123', gen_salt('bf')), now(), '{"provider": "email", "providers": ["email"]}', $3, now(), now());
-      `, [stuId, email, JSON.stringify({ role: 'student', full_name: faker.person.fullName() })]);
-      
-      // Update the student profile created by the trigger
+      let stuId;
+      if (i === 0) {
+        const { data: stuData } = await supabase.auth.admin.createUser({
+          email: 'student@example.com',
+          password: 'password123',
+          email_confirm: true,
+          user_metadata: { role: 'student', full_name: faker.person.fullName() }
+        });
+        stuId = stuData.user.id;
+        await client.query(`INSERT INTO public.users (id, email, role) VALUES ($1, 'student@example.com', 'student')`, [stuId]);
+        await client.query(`INSERT INTO public.student_profiles (user_id, full_name) VALUES ($1, $2)`, [stuId, faker.person.fullName()]);
+      } else {
+        const email = `student_${i}@faker.com`;
+        stuId = crypto.randomUUID();
+        await client.query(`
+          INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+          VALUES ($1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2, crypt('password123', gen_salt('bf')), now(), '{"provider": "email", "providers": ["email"]}', $3, now(), now());
+        `, [stuId, email, JSON.stringify({ role: 'student', full_name: faker.person.fullName() })]);
+        await client.query(`INSERT INTO public.users (id, email, role) VALUES ($1, $2, 'student')`, [stuId, email]);
+        await client.query(`INSERT INTO public.student_profiles (user_id, full_name) VALUES ($1, $2)`, [stuId, faker.person.fullName()]);
+      }
       await client.query(`
         UPDATE public.student_profiles 
         SET headline = $1, skills = $2, location = $3, profile_completeness = 100
