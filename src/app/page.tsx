@@ -1,7 +1,20 @@
 import ParseRevealHero from '@/components/marketing/ParseRevealHero'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
+import { logout } from '@/app/actions/auth'
 
-export default function MarketingPage() {
+export default async function MarketingPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  let dashboardUrl = '/student'
+  if (user) {
+    const { data: dbUser } = await supabase.from('users').select('role').eq('id', user.id).single()
+    if (dbUser?.role) {
+      dashboardUrl = `/${dbUser.role}`
+    }
+  }
+
   return (
     <div className="min-h-screen bg-paper dark:bg-ink selection:bg-highlighter selection:text-ink">
       <header className="flex items-center justify-between px-6 py-4 max-w-7xl mx-auto border-b border-ink/10 dark:border-paper/10">
@@ -11,10 +24,23 @@ export default function MarketingPage() {
           <Link href="#pricing" className="hover:text-highlighter transition-colors">Pricing</Link>
         </nav>
         <div className="flex gap-4 items-center">
-          <Link href="/login" className="font-medium text-sm hover:underline">Log in</Link>
-          <Link href="/register?role=corporate" className="bg-ink text-paper dark:bg-paper dark:text-ink px-4 py-2 rounded font-medium text-sm">
-            Get Started
-          </Link>
+          {user ? (
+            <>
+              <Link href={dashboardUrl} className="font-medium text-sm hover:underline">Dashboard</Link>
+              <form action={logout}>
+                <button type="submit" className="bg-ink text-paper dark:bg-paper dark:text-ink px-4 py-2 rounded font-medium text-sm hover:opacity-90 transition-opacity">
+                  Log out
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <Link href="/login" className="font-medium text-sm hover:underline">Log in</Link>
+              <Link href="/register?role=corporate" className="bg-ink text-paper dark:bg-paper dark:text-ink px-4 py-2 rounded font-medium text-sm hover:opacity-90 transition-opacity">
+                Get Started
+              </Link>
+            </>
+          )}
         </div>
       </header>
 
