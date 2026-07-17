@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { getURL } from '@/lib/url'
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -16,6 +17,19 @@ export async function login(formData: FormData) {
   }
   redirect('/') // Middleware will intercept and redirect to correct role dashboard
 }
+export async function signInWithGoogle() {
+  const supabase = await createClient()
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: `${getURL()}auth/callback`,
+    },
+  })
+
+  if (data.url) {
+    redirect(data.url)
+  }
+}
 
 export async function register(formData: FormData) {
   const supabase = await createClient()
@@ -29,6 +43,7 @@ export async function register(formData: FormData) {
     email,
     password,
     options: {
+      emailRedirectTo: `${getURL()}auth/callback`,
       data: {
         role,
         full_name: fullName
